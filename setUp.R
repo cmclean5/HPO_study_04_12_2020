@@ -5,11 +5,11 @@ rm(list=ls())
 version="04_12_2020"
 
 #change 'myDir' to where package is downloaded too.
-#myDir   <- "/afs/inf.ed.ac.uk/user/c/cmclean5/WORK/DATA/"
+myDir   <- "/afs/inf.ed.ac.uk/user/c/cmclean5/WORK/DATA/"
 
 #Set the absolute path to this working directory
-#mainDir <- sprintf("%s/HPO_study_%s",myDir,version)
-mainDir <- system("pwd",intern=TRUE)
+mainDir <- sprintf("%s/HPO_study_%s",myDir,version)
+##mainDir <- system("pwd",intern=TRUE)
 
 #Get Path to all top-level directories in folder
 DIRS <- list.dirs(mainDir,recursive=F)
