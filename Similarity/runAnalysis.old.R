@@ -13,8 +13,7 @@ source('loadFunctions.R')
 set.seed(1)
 
 ## directories
-annodir <- DIRS[grepl("Annotations",DIRS)]
-#annodir <- DIRS[grepl("Annotations",DIRS) & !grepl("safe",DIRS)]
+annodir <- DIRS[grepl("Annotation",DIRS)]
 grdir   <- DIRS[grepl("Graphs",DIRS)]
 obodir  <- DIRS[grepl("OBO",DIRS)]
 
@@ -70,8 +69,8 @@ Anno = as.data.frame(Anno)
 for( m in 1:length(models) ){
     onto = rm.onto.annotation(ONTO=onto, LABEL=models[m])
     onto = add.onto.annotation(ONTO=onto, ANNO=Anno, HPLABEL="hpo_id", LABEL=models[m])
-    onto = rough.fixNA(ONTO=onto, ANNO.LAB=models[m], NEW.ANNO.LAB=sprintf("%s.%s",models[m],"median"),type="median")
-    onto = level.fixNA(ONTO=onto, LEVEL.LAB="levels", ANNO.LAB=models[m], NEW.ANNO.LAB=sprintf("%s.%s",models[m],"levels"),type="mean")
+    onto = rough.fixNA(ONTO=onto, ANNO.LAB=models[m], NEW.ANNO.LAB=sprintf("%s.%s",models[m],"median"),MED=TRUE)
+    onto = level.fixNA(ONTO=onto, LEVEL.LAB="levels", ANNO.LAB=models[m], NEW.ANNO.LAB=sprintf("%s.%s",models[m],"levels"),MED=FALSE)
 }
 ##------------------------
 
@@ -186,59 +185,64 @@ names(IC.anc)[(Nmodels+1)]  = anno.lab
 ## pre-calculate MICA scores between all HP terms in ddd and metamap... 
 ## this will take so time ~15-20mins per ANNO set.
 PRECAL = list()
-PRECAL[[1]] = NULL;#precal.sim( ONTO=onto, HP.SET=geneModel.HP, IC=IC.anc, ANNO.SET=1 )[[1]]
-PRECAL[[2]] = NULL;#precal.sim( ONTO=onto, HP.SET=geneModel.HP, IC=IC.anc, ANNO.SET=2 )[[1]]
+PRECAL[[1]] = precal.sim( ONTO=onto, HP.SET=geneModel.HP, IC=IC.anc, ANNO.SET=1 )[[1]]
+PRECAL[[2]] = precal.sim( ONTO=onto, HP.SET=geneModel.HP, IC=IC.anc, ANNO.SET=2 )[[1]]
 PRECAL[[3]] = precal.sim( ONTO=onto, HP.SET=geneModel.HP, IC=IC.anc, ANNO.SET=3 )[[1]]
 
-##--- TESTS ---##
-## NOTE: A metric which seems to work is:
-##    1) first calculating the average IC with each gene model,
-##    2) then calculating the js_distance (jsd) between these two models.
+## TESTS (uncomment line 'test1 = ...' etc to run) ##
 
+## 1) calculate the similarity between LIT and DDD gene models, using precalculate MICA scores... this will be fast
+#test1 = pheno.sim.precal(MODEL.A=DDDset[[1]],MODEL.B=LITset[[1]], PRECAL=PRECAL, IC=IC.anc, ANNO.SET.A=1, ANNO.SET.B=2)
 
+## 2) otherwise, we can calculate the similarity between a DDD and LIT gene models given the
+## HP terms... this will be slower
+#test2 = pheno.sim( ONTO=onto, MODEL.A=DDDset[[1]], MODEL.B=DDDset[[1]], IC=IC.anc, ANNO.SET.A=1, ANNO.SET.B=1 )
 
-## calculate the similarity between all DDDvDDD gene models, using precalculate MICA scores...
+## 3) calculate similarity between two LIT gene models not using annotation data
+#test3 = pheno.sim.precal(MODEL.A=LITset[[1]],MODEL.B=LITset[[2]], PRECAL=PRECAL, IC=IC.anc, ANNO.SET.A=3, ANNO.SET.B=3)
+
+##---- DONE ------------------------------------
+
+## calculate the similarity between all LITvDDD gene models, using precalculate MICA scores...
 ## this will be fast
-ddd.sim = cal.sim.matrix( MODEL.A=DDDset, MODEL.B=DDDset, PRECAL=PRECAL, IC=IC.anc,
-                          ANNO.SET.A=3, ANNO.SET.B=3,
-                          TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def" )
+sim.max = matrix(NA,ncol=length(DDDset),nrow=length(LITset))
+colnames(sim.max) = names(DDDset)
+rownames(sim.max) = names(LITset)
 
-## heat-map of distance between average IC value between two gene models: no scaled
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=value)) + geom_raster()
+sim.avg = matrix(NA,ncol=length(DDDset),nrow=length(LITset))
+colnames(sim.avg) = names(DDDset)
+rownames(sim.avg) = names(LITset)
 
-## heat-map of distance between average IC value between two gene models: scaled=50
-ScalingFactor=50
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
-## heat-map of distance between average IC value between two gene models: scaled=100
-ScalingFactor=100
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
-## heat-map of distance between average IC value between two gene models: scaled=200
-ScalingFactor=200
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
+jsd = matrix(NA,ncol=length(DDDset),nrow=length(LITset))
+colnames(jsd) = names(DDDset)
+rownames(jsd) = names(LITset)
 
 
-## calculate the similarity between all LITvLIT gene models, using precalculate MICA scores...
-## this will be fast
-lit.sim = cal.sim.matrix( MODEL.A=LITset, MODEL.B=LITset, PRECAL=PRECAL, IC=IC.anc,
-                          ANNO.SET.A=3, ANNO.SET.B=3,
-                          TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def")
+for( i in 1:length(LITset) ){
+    for( j in 1:length(DDDset) ){
+        res = pheno.sim.precal(MODEL.A=LITset[[i]],MODEL.B=DDDset[[j]], PRECAL=PRECAL, IC=IC.anc, ANNO.SET.A=2, ANNO.SET.B=1)
+        sim.max[i,j] = res$sim.max
+        sim.avg[i,j] = res$sim.avg
+        jsd[i,j]     = res$jsd
+    }
+}
+##---- DONE ------------------------------------
 
-## heat-map of distance between average IC value between two gene models: no scaled
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=value)) + geom_raster()
+## calculate the similarity between all LITvDDD gene models, not using annotation data, using precalculate MICA scores...
+sim.max2 = matrix(NA,ncol=length(DDDset),nrow=length(LITset))
+colnames(sim.max2) = names(DDDset)
+rownames(sim.max2) = names(LITset)
 
-## heat-map of distance between average IC value between two gene models: scaled=50
-ScalingFactor=50
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
+sim.avg2 = matrix(NA,ncol=length(DDDset),nrow=length(LITset))
+colnames(sim.avg2) = names(DDDset)
+rownames(sim.avg2) = names(LITset)
 
-## heat-map of distance between average IC value between two gene models: scaled=100
-ScalingFactor=100
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
-## heat-map of distance between average IC value between two gene models: scaled=200
-ScalingFactor=200
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
+for( i in 1:length(LITset) ){
+    for( j in 1:length(DDDset) ){
+        res = pheno.sim.precal(MODEL.A=LITset[[i]],MODEL.B=DDDset[[j]], PRECAL=PRECAL, IC=IC.anc, ANNO.SET.A=3, ANNO.SET.B=3)
+        sim.max2[i,j] = res$sim.max
+        sim.avg2[i,j] = res$sim.avg
+    }
+}
 ##---- DONE ------------------------------------
 

@@ -21,7 +21,7 @@ entropy <- function(x, BASE=0){
 }
 
 ## KL divergence KL(P || Q)
-#kl_divergence <- function(p,q){    
+#kl_divergence <- function(p,q){
 #    p = as.numeric(p)
 #    q = as.numeric(q)
 #    if( is.na(p) || is.na(q) ){return(NA)}
@@ -33,9 +33,9 @@ entropy <- function(x, BASE=0){
 kl_divergence <- function(p,q){
     p = as.numeric(p)
     q = as.numeric(q)
-    if( p==0 ){ p=p+SMALL; }
-    if( q==0 ){ q=q+SMALL; }    
     if( is.na(p) || is.na(q) ){return(NA)}
+    if( p==0 ){ p=p+SMALL; }
+    if( q==0 ){ q=q+SMALL; }
     else { return(p*log(p/q)) }
 }
 
@@ -112,6 +112,8 @@ rough.fixNA <- function(ONTO,ANNO.LAB="",NEW.ANNO.LAB="",type=c("median","mean")
 ## use median, or mean, of annotations on a given level to impute missing HP annotation
 ## values.
 level.fixNA <- function(ONTO,LEVEL.LAB="levels",ANNO.LAB="", NEW.ANNO.LAB="",type=c("median","mean")){
+
+    type =  match.arg(type);
     
     level.indx = which(names(ONTO)==LEVEL.LAB)
     label.indx = which(names(ONTO)==ANNO.LAB)
@@ -346,6 +348,30 @@ get.descendants <- function(ONTO,TARGET){
     return(get.sub.decendants(SUBONTO=ONTO,TARGET=TARGET));
 }
 
+add.ancestor.terms <- function(ONTO,SUB=FALSE,SET=NULL){
+
+    ancSET=NULL
+
+    if( !is.null(SET) ){
+
+        models  = names(SET)
+        Nmodels = length(models)
+
+        for( i in 1:Nmodels ){
+            if( SUB ){ anc.terms = get.sub.ancestors(ONTO, SET[[i]])
+            } else {   anc.terms = get.ancestors    (ONTO, SET[[i]]) }
+
+            ancSET[[i]]      = unique(c(SET[[i]],anc.terms))
+            names(ancSET)[i] = models[i]
+        }
+
+    }
+
+
+    return(ancSET)
+    
+}
+
 get.term.frequency <- function( ONTO, TARGET, LABEL=NULL, PRINT=FALSE, SUB=FALSE ){
 ## Ref: https://www.cell.com/ajhg/fulltext/S0002-9297(09)00399-1
 ## The frequency of a term is defined as the proportion of objects that are annotated by the term or any of its descendent terms.
@@ -409,6 +435,108 @@ get.term.frequency <- function( ONTO, TARGET, LABEL=NULL, PRINT=FALSE, SUB=FALSE
             
 }
 
+## this function will set a IC value to every HP and ancestor term found in the lit/ddd dataset
+get.model.IC.2 <- function(ONTO, SET, MODEL.LABEL, SUB=FALSE, PRINT=FALSE, PARM=list(k=0.5)){
+
+    ## set any parameters needed
+    k = PARM[[which(names(PARM)=="k")]][1]
+
+    ## number of gene models in set
+    models  = names(SET)
+    Nmodels = length(models)
+
+    ## get frequency for each HP term in geneModel and geneModel.anc
+    ROOT.IC = list()
+    IC.anc  = list()
+
+    cat("> get IC for each HP term, and ancestors terms, in gene model:", MODEL.LABEL, "..."); 
+    
+    ## (1) build matrix of presence/absence of each HP, and ancestor, term in each model 
+    set.HP <- c()
+
+    for( i in 1:Ngenes ){ set.HP = c(set.HP,SET[[i]]); }
+
+    set.HP  = unique(set.HP)
+    Nset.HP = length(set.HP)
+
+    term.model <- matrix(0,ncol=Nmodels,nrow=Nset.HP)
+    colnames(term.model) = models
+    rownames(term.model) = set.HP
+
+    for( i in 1:Nmodels ){
+        indx = match(SET[[i]],rownames(term.model))
+        term.model[indx,i] = 1    
+    }
+    
+    ## (2) next get model frequency for all HP, and HP ancestor, terms
+    tmp = rowSums(term.model)
+
+    ## (3) store HP term freqeuncies in IC.anc
+    xx           = matrix(NA,ncol=3,nrow=Nset.HP)
+    colnames(xx) = c("HP.term","levels","Freq")
+    xx[,1]       = set.HP
+    if( !is.na(match("levels",names(ONTO),nomatch=NA)) ){
+        xx[,2]   = as.numeric(ONTO$levels[match(xx[,1],ONTO$id)])
+    }
+    xx[match(xx[,1],names(tmp)),3] = as.numeric(tmp)
+
+    IC.anc[[1]]      = xx;
+    names(IC.anc)[1] = MODEL.LABEL;
+
+    ## Freq of Root node is now the number of gene models in set
+    ROOT.IC[[1]]     = Nmodels;
+    
+    cat("done.\n")
+
+    cat("> 1) get probability for each HP term in each gene model...")
+
+    ## (4) get probability (prob) for each gene model HP term and ancentor HP term
+    indx  = which(colnames(IC.anc[[1]])=="prob.def")
+    if( length(indx) != 0 ){ IC.anc[[1]] = IC.anc[[1]][,-indx]; }
+    indx  = which(colnames(IC.anc[[1]])=="Freq")
+    freq  = as.numeric(IC.anc[[1]][,indx])
+    prob  = (freq+1)/(as.numeric(ROOT.IC[[1]])+1)
+    IC.anc[[1]] = cbind(IC.anc[[1]],prob)
+    colnames(IC.anc[[1]])[dim(IC.anc[[1]])[2]] = "prob.def"
+
+    cat("done.\n")
+
+    cat("> 2) get information content for each HP term in each gene model...")
+
+    ## (5) get information content (IC) for each gene model HP term and ancentor HP term
+    indx  = which(colnames(IC.anc[[1]])=="IC.def")
+    if( length(indx) != 0 ){ IC.anc[[1]] = IC.anc[[1]][,-indx]; }
+    indx  = which(colnames(IC.anc[[1]])=="prob.def")
+    prob  = as.numeric(IC.anc[[1]][,indx])
+    ic    = -log(prob)
+    IC.anc[[1]] = cbind(IC.anc[[1]],ic)
+    colnames(IC.anc[[1]])[dim(IC.anc[[1]])[2]] = "IC.def"
+
+    cat("done.\n")
+
+    cat("> 3) get information content with relative depth for each HP term in each gene model...")
+    ## REF: [1] https://link.springer.com/article/10.1007/s10844-017-0479-y
+    ##      [2] https://www.sciencedirect.com/science/article/pii/S1532046415002877#b0065
+    ##      [3] https://www.sciencedirect.com/science/article/pii/S0950705120306948#b8
+    indx  = which(colnames(IC.anc[[1]])=="IC.deg")
+    if( length(indx) != 0 ){ IC.anc[[1]] = IC.anc[[1]][,-indx]; }
+    indx  = which(colnames(IC.anc[[1]])=="Freq")
+    freq  = as.numeric(IC.anc[[1]][,indx])
+    indx  = which(colnames(IC.anc[[1]])=="levels")
+    level = as.numeric(IC.anc[[1]][,indx])
+    ic.deg  = k*(1 - (log(freq+1)/log(as.numeric(ROOT.IC[[1]])+1)));
+    ic.deg  = ic.deg + (1-k) * (log(level+1)/log(max(level,na.rm=T)+1));
+    IC.anc[[1]] = cbind(IC.anc[[1]],ic.deg)
+    colnames(IC.anc[[1]])[dim(IC.anc[[1]])[2]] = "IC.deg"
+
+    cat("done.\n")    
+   
+    return(list(IC.anc=IC.anc[[1]],ROOT.IC=ROOT.IC[[1]]))
+    
+}
+
+
+## this function will set a IC value to every HP term in ontology
 get.model.IC <- function(ONTO, HP.TERMS, ROOT, MODEL.LABEL, SUB=FALSE, PRINT=FALSE,
                          PARM=list(k=0.5)){
 
@@ -434,7 +562,7 @@ get.model.IC <- function(ONTO, HP.TERMS, ROOT, MODEL.LABEL, SUB=FALSE, PRINT=FAL
     xx           = matrix(NA,ncol=3,nrow=length(HP.TERMS))
     colnames(xx) = c("HP.term","levels","Freq")
     xx[,1]       = HP.TERMS
-    if( !is.na(match("levels",names(onto),nomatch=NA)) ){
+    if( !is.na(match("levels",names(ONTO),nomatch=NA)) ){
         xx[,2]   = as.numeric(ONTO$levels[match(xx[,1],ONTO$id)])
     }
     xx[match(xx[,1],names(tmp)),3] = as.numeric(tmp)
@@ -549,8 +677,8 @@ precal.sim <- function(ONTO, HP.SET, IC, ANNO.SET=1, PRINT=TRUE,
     N       = length(HP.SET)
     Nfrac   = ceiling((20 * N)/100)
     
-    HPindx  = which(colnames(IC[[ANNO.SET]])==TERM.LAB)#"HP.term") 
-    ICindx  = which(colnames(IC[[ANNO.SET]])==IC.LAB)#"IC")    
+    HPindx  = which(colnames(IC[[ANNO.SET]])==TERM.LAB)
+    ICindx  = which(colnames(IC[[ANNO.SET]])==IC.LAB)
     
     if( length(N) > 0 ){
 
@@ -630,8 +758,8 @@ pheno.sim <- function(ONTO, MODEL.A, MODEL.B, IC, ANNO.SET.A=1, ANNO.SET.B=1,
 
             ## patient similarity based on MICA
             sim.max = 0.5 * ( row.sum + col.sum )
-            sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )
-    
+            sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )            
+            
             return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))
 
         } else {
@@ -662,8 +790,8 @@ pheno.sim <- function(ONTO, MODEL.A, MODEL.B, IC, ANNO.SET.A=1, ANNO.SET.B=1,
                 
             }
 
-            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC.anc[[ANNO.SET.A]],CINDX=ICindx)
-            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC.anc[[ANNO.SET.B]],CINDX=ICindx)
+            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
+            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.B]],CINDX=ICindx)
             
             Avg   = 0.5 * (Sim.A + Sim.B);
             
@@ -675,8 +803,8 @@ pheno.sim <- function(ONTO, MODEL.A, MODEL.B, IC, ANNO.SET.A=1, ANNO.SET.B=1,
             sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )
 
             ## jenson-shannon distance
-            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC.anc[[ANNO.SET.A]],CINDX=PRindx)
-            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC.anc[[ANNO.SET.B]],CINDX=PRindx)
+            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=PRindx)
+            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.B]],CINDX=PRindx)
             js    = sum(js_divergence(p=as.vector(Sim.A),q=as.vector(Sim.B)),na.rm=T)
             jsd   = sqrt(js)
 
@@ -690,11 +818,14 @@ pheno.sim <- function(ONTO, MODEL.A, MODEL.B, IC, ANNO.SET.A=1, ANNO.SET.B=1,
     return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))    
 }
 
-get.precal.data <- function( IC, RINDX, CINDX ){
+#get.precal.data <- function( IC, RINDX, CINDX ){
+#    return(as.numeric(IC[RINDX,CINDX]))    
+#}
 
-    return(as.numeric(IC[RINDX,CINDX]))
-    
+get.precal.data <- function( x, IC, CINDX ){
+    return(as.numeric(IC[x,CINDX]))    
 }
+
 
 ## compute the symmetric similarity (Sim_max and Sim_avg)
 ## between two HP term sets, MODEL.A and MODEL.B, using precalulated MICA
@@ -720,15 +851,25 @@ pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SE
 
             Rind  = match(MODEL.A,rownames(PRECAL[[ANNO.SET.A]]))
             Cind  = match(MODEL.B,colnames(PRECAL[[ANNO.SET.A]]))
-            Sim.A = PRECAL[[ANNO.SET.A]][Rind,Cind]
-            Sim.A = apply(Sim.A,2,get.precal.data,IC=IC.anc[[ANNO.SET.A]],CINDX=ICindx)
+            tmp.A = PRECAL[[ANNO.SET.A]][Rind,Cind]
+            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
             
             row.sum = sum(apply(Sim.A,1,max,na.rm=T))
             col.sum = sum(apply(Sim.A,2,max,na.rm=T))
 
             ## patient similarity based on MICA
             sim.max = 0.5 * ( row.sum + col.sum )
-            sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )       
+            sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )                            
+           
+            ## TEST: measure the distance between average IC value of two gene models,
+            ##       using js_divergence.
+            tmp.A   = PRECAL[[ANNO.SET.A]][Rind,Rind]
+            tmp.B   = PRECAL[[ANNO.SET.A]][Cind,Cind]
+            Sim.A   = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
+            Sim.B   = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
+            IC.A.mn = sum(Sim.A)/length(Sim.A)
+            IC.B.mn = sum(Sim.B)/length(Sim.B)
+            jsd     = sqrt(sum(js_divergence(exp(-IC.A.mn),exp(-IC.B.mn))))            
             
             return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))
 
@@ -737,12 +878,12 @@ pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SE
             Rind  = match(MODEL.A,rownames(PRECAL[[ANNO.SET.A]]))
             Cind  = match(MODEL.B,colnames(PRECAL[[ANNO.SET.A]]))
             tmp.A = PRECAL[[ANNO.SET.A]][Rind,Cind]
-            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC.anc[[ANNO.SET.A]],CINDX=ICindx)
+            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
 
             Rind  = match(MODEL.A,rownames(PRECAL[[ANNO.SET.B]]))
             Cind  = match(MODEL.B,colnames(PRECAL[[ANNO.SET.B]]))
             tmp.B = PRECAL[[ANNO.SET.B]][Rind,Cind]
-            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC.anc[[ANNO.SET.B]],CINDX=ICindx)
+            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.B]],CINDX=ICindx)
 
             Avg   = 0.5 * (Sim.A + Sim.B);
             
@@ -754,11 +895,25 @@ pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SE
             sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )
 
             ## jenson-shannon distance
-            Sim.A = apply(tmp.A,2,get.precal.data,IC=IC.anc[[ANNO.SET.A]],CINDX=PRindx)
-            Sim.B = apply(tmp.B,2,get.precal.data,IC=IC.anc[[ANNO.SET.B]],CINDX=PRindx)
-            js    = sum(js_divergence(p=as.vector(Sim.A),q=as.vector(Sim.B)),na.rm=T)     
-            jsd   = sqrt(js)
+            #Sim.A = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=PRindx)
+            #Sim.B = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.B]],CINDX=PRindx)
+            #js    = sum(js_divergence(p=as.vector(Sim.A),q=as.vector(Sim.B)),na.rm=T)     
+            #jsd   = sqrt(js)
 
+            ## TEST: measure the distance between average IC value of two gene models,
+            ##       using js_divergence.
+            Aind    = match(MODEL.A,rownames(PRECAL[[ANNO.SET.A]]))
+            tmp.A   = PRECAL[[ANNO.SET.A]][Aind,Aind]
+            Bind    = match(MODEL.B,rownames(PRECAL[[ANNO.SET.B]]))
+            tmp.B   = PRECAL[[ANNO.SET.B]][Bind,Bind]
+
+            Sim.A   = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
+            Sim.B   = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.B]],CINDX=ICindx)
+            IC.A.mn = sum(Sim.A)/length(Sim.A)
+            IC.B.mn = sum(Sim.B)/length(Sim.B)
+            jsd     = sqrt(sum(js_divergence(exp(-IC.A.mn),exp(-IC.B.mn)))) 
+            
+            
             return(list(Sim=Avg,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))
 
         }#else
@@ -787,7 +942,7 @@ get.avg.prob <- function(MODEL.A, PRECAL, IC, ANNO.SET.A=1,
         Rind  = match(MODEL.A,rownames(PRECAL[[ANNO.SET.A]]))
         Cind  = match(MODEL.A,colnames(PRECAL[[ANNO.SET.A]]))
         tmp.A = PRECAL[[ANNO.SET.A]][Rind,Cind]
-        Sim.A = apply(tmp.A,2,get.precal.data,IC=IC.anc[[ANNO.SET.A]],CINDX=PRindx)
+        Sim.A = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=PRindx)
 
         avg.prob = sum(as.vector(Sim.A),na.rm=T)/length(Sim.A)
         
@@ -798,6 +953,40 @@ get.avg.prob <- function(MODEL.A, PRECAL, IC, ANNO.SET.A=1,
     return(list(avg.prob=avg.prob))
 }
 
+
+cal.sim.matrix <- function( MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SET.B=1,
+                           TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def" ){
+
+    ## calculate the similarity between all LITvLIT gene models, using precalculate MICA scores...
+    ## this will be fast
+    sim.max = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
+    rownames(sim.max) = names(MODEL.A)
+    colnames(sim.max) = names(MODEL.B)
+
+    sim.avg = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
+    rownames(sim.avg) = names(MODEL.A)
+    colnames(sim.avg) = names(MODEL.B)
+
+    sim.jsd = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
+    rownames(sim.jsd) = names(MODEL.A)
+    colnames(sim.jsd) = names(MODEL.B)
+
+    for( i in 1:length(MODEL.A) ){
+        for( j in 1:length(MODEL.B) ){
+            res = pheno.sim.precal(MODEL.A=MODEL.A[[i]], MODEL.B=MODEL.B[[j]],
+                                   PRECAL=PRECAL, IC=IC,
+                                   ANNO.SET.A=ANNO.SET.A, ANNO.SET.B=ANNO.SET.B,
+                                   TERM.LAB=TERM.LAB, IC.LAB=IC.LAB, PR.LAB=PR.LAB )
+            sim.max[i,j] = res$sim.max
+            sim.avg[i,j] = res$sim.avg
+            sim.jsd[i,j] = res$jsd
+        }
+    }
+    ##---- DONE ------------------------------------
+
+    return(list(max=sim.max,avg=sim.avg,jsd=sim.jsd))
+    
+}
     
 ##--------------------------------------------------------
 ## functions for dealing with a subontology
