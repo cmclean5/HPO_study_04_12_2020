@@ -826,17 +826,49 @@ get.precal.data <- function( x, IC, CINDX ){
     return(as.numeric(IC[x,CINDX]))    
 }
 
+mica.distance <- function(Sim.A, Sim.B, ROUND=3){
+
+    ct.A = table(Sim.A)
+    ct.B = table(Sim.B)
+    
+    labels.A = names(ct.A)
+    labels.B = names(ct.B)
+    
+    short.A = round(as.numeric(labels.A),ROUND)
+    short.B = round(as.numeric(labels.B),ROUND)
+    
+    Rows = unique(c(short.A,short.B))
+    
+    names(ct.A) = short.A
+    names(ct.B) = short.B
+    
+    mt = matrix(0,ncol=2,nrow=length(Rows))
+    
+    mt[match(names(ct.A),Rows),1] = ct.A
+    mt[match(names(ct.B),Rows),2] = ct.B
+    
+    mt[,1] = mt[,1]/sum(ct.A)
+    mt[,2] = mt[,2]/sum(ct.B)
+
+    x=0   
+    for(i in 1:dim(mt)[1]){ x=x+js_divergence2(mt[i,1],mt[i,2]) }    
+    
+    return(x)
+}
 
 ## compute the symmetric similarity (Sim_max and Sim_avg)
 ## between two HP term sets, MODEL.A and MODEL.B, using precalulated MICA
 pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SET.B=1,
-                             TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def"){
+                             TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def",
+                             ROUND=3){
 
     Sim.A   = NULL
     Sim.B   = NULL
     sim.max = NULL
     sim.avg = NULL
-    jsd     = NULL
+    jsd.ic  = NULL
+    jsd.mica= NULL
+    jsd.avg = NULL
     
     Na = length(MODEL.A)
     Nb = length(MODEL.B)
@@ -861,7 +893,7 @@ pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SE
             sim.max = 0.5 * ( row.sum + col.sum )
             sim.avg = 0.5 * ( (1/Na) * row.sum + (1/Nb) * col.sum )                            
            
-            ## TEST: measure the distance between average IC value of two gene models,
+            ## TEST: measure the distance between average MICA value of two gene models,
             ##       using js_divergence.
             tmp.A   = PRECAL[[ANNO.SET.A]][Rind,Rind]
             tmp.B   = PRECAL[[ANNO.SET.A]][Cind,Cind]
@@ -869,9 +901,28 @@ pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SE
             Sim.B   = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
             IC.A.mn = sum(Sim.A)/length(Sim.A)
             IC.B.mn = sum(Sim.B)/length(Sim.B)
-            jsd     = sqrt(sum(js_divergence(exp(-IC.A.mn),exp(-IC.B.mn))))            
+            jsd.avg = sqrt(sum(js_divergence(exp(-IC.A.mn),exp(-IC.B.mn))))
+
+            ##jacaard
+            #jsd     = length(intersect(MODEL.A,MODEL.B))/max(Na,Nb)
+
+            #ovlp   = intersect(MODEL.A,MODEL.B)
+            #Indx.A = match(ovlp,colnames(Sim.A))
+            #Indx.B = match(ovlp,colnames(Sim.B))
+            #if( length(Indx.A) > 0 && length(Indx.B) > 0 ){
+            #    jsd    = mica.sim(Sim.A[Indx.A,Indx.A],Sim.B[Indx.B,Indx.B])
+            #}
+
+            ## TEST 2: distance between IC scores in each gene model
+            Sim.A    = IC[[ANNO.SET.A]][match(MODEL.A,IC[[ANNO.SET.A]][,1]),ICindx]
+            Sim.B    = IC[[ANNO.SET.B]][match(MODEL.B,IC[[ANNO.SET.B]][,1]),ICindx]
+            jsd.ic   = mica.distance(Sim.A,Sim.B,ROUND=ROUND)           
+
+            ## TEST 3: distance between MICA scores in each gene model
+            jsd.mica = mica.distance(Sim.A,Sim.B,ROUND=ROUND)    
             
-            return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))
+            return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,
+                        jsd.ic=jsd.ic,jsd.mica=jsd.mica,jsd.avg=jsd.avg))
 
         } else {
 
@@ -902,25 +953,39 @@ pheno.sim.precal <- function(MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SE
 
             ## TEST: measure the distance between average IC value of two gene models,
             ##       using js_divergence.
+            #ovlp    = intersect(MODEL.A,MODEL.B)
             Aind    = match(MODEL.A,rownames(PRECAL[[ANNO.SET.A]]))
+            #Aind    = match(ovlp,rownames(PRECAL[[ANNO.SET.A]]))
             tmp.A   = PRECAL[[ANNO.SET.A]][Aind,Aind]
             Bind    = match(MODEL.B,rownames(PRECAL[[ANNO.SET.B]]))
+            #Bind    = match(ovlp,rownames(PRECAL[[ANNO.SET.B]]))
             tmp.B   = PRECAL[[ANNO.SET.B]][Bind,Bind]
 
             Sim.A   = apply(tmp.A,2,get.precal.data,IC=IC[[ANNO.SET.A]],CINDX=ICindx)
             Sim.B   = apply(tmp.B,2,get.precal.data,IC=IC[[ANNO.SET.B]],CINDX=ICindx)
             IC.A.mn = sum(Sim.A)/length(Sim.A)
             IC.B.mn = sum(Sim.B)/length(Sim.B)
-            jsd     = sqrt(sum(js_divergence(exp(-IC.A.mn),exp(-IC.B.mn)))) 
+            jsd.avg = sqrt(sum(js_divergence(exp(-IC.A.mn),exp(-IC.B.mn)))) 
+
+            ## TEST 2: distance between IC scores in each gene model
+            Sim.A    = IC[[ANNO.SET.A]][match(MODEL.A,IC[[ANNO.SET.A]][,1]),ICindx]
+            Sim.B    = IC[[ANNO.SET.B]][match(MODEL.B,IC[[ANNO.SET.B]][,1]),ICindx]
+            jsd.ic   = mica.distance(Sim.A,Sim.B,ROUND=ROUND)           
+
+            ## TEST 3: distance between MICA scores in each gene model
+            jsd.mica = mica.distance(Sim.A,Sim.B,ROUND=ROUND)    
             
-            
-            return(list(Sim=Avg,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))
+            return(list(Sim=Avg,sim.max=sim.max,sim.avg=sim.avg,
+                        jsd.ic=jsd.ic,
+                        jsd.mica=jsd.mica,
+                        jsd.avg=jsd.avg))
 
         }#else
 
     }#length
 
-    return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,jsd=jsd))
+    return(list(Sim=Sim.A,sim.max=sim.max,sim.avg=sim.avg,
+                jsd.ic=jsd.ic,jsd.mica=jsd.mica,jsd.avg=jsd.avg))
     
 }
 
@@ -955,7 +1020,8 @@ get.avg.prob <- function(MODEL.A, PRECAL, IC, ANNO.SET.A=1,
 
 
 cal.sim.matrix <- function( MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SET.B=1,
-                           TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def" ){
+                           TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def",
+                           ROUND=3 ){
 
     ## calculate the similarity between all LITvLIT gene models, using precalculate MICA scores...
     ## this will be fast
@@ -967,24 +1033,36 @@ cal.sim.matrix <- function( MODEL.A, MODEL.B, PRECAL, IC, ANNO.SET.A=1, ANNO.SET
     rownames(sim.avg) = names(MODEL.A)
     colnames(sim.avg) = names(MODEL.B)
 
-    sim.jsd = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
-    rownames(sim.jsd) = names(MODEL.A)
-    colnames(sim.jsd) = names(MODEL.B)
+    jsd.ic = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
+    rownames(jsd.ic) = names(MODEL.A)
+    colnames(jsd.ic) = names(MODEL.B)
 
+    jsd.mica = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
+    rownames(jsd.mica) = names(MODEL.A)
+    colnames(jsd.mica) = names(MODEL.B)
+
+    jsd.avg = matrix(NA,ncol=length(MODEL.B),nrow=length(MODEL.A))
+    rownames(jsd.avg) = names(MODEL.A)
+    colnames(jsd.avg) = names(MODEL.B)
+    
     for( i in 1:length(MODEL.A) ){
         for( j in 1:length(MODEL.B) ){
             res = pheno.sim.precal(MODEL.A=MODEL.A[[i]], MODEL.B=MODEL.B[[j]],
                                    PRECAL=PRECAL, IC=IC,
                                    ANNO.SET.A=ANNO.SET.A, ANNO.SET.B=ANNO.SET.B,
-                                   TERM.LAB=TERM.LAB, IC.LAB=IC.LAB, PR.LAB=PR.LAB )
-            sim.max[i,j] = res$sim.max
-            sim.avg[i,j] = res$sim.avg
-            sim.jsd[i,j] = res$jsd
+                                   TERM.LAB=TERM.LAB, IC.LAB=IC.LAB, PR.LAB=PR.LAB,
+                                   ROUND=ROUND )
+            sim.max[i,j]  = res$sim.max
+            sim.avg[i,j]  = res$sim.avg
+            jsd.ic[i,j]   = res$jsd.ic
+            jsd.mica[i,j] = res$jsd.mica
+            jsd.avg[i,j]  = res$jsd.avg
         }
     }
     ##---- DONE ------------------------------------
 
-    return(list(max=sim.max,avg=sim.avg,jsd=sim.jsd))
+    return(list(max=sim.max,avg=sim.avg,
+                jsd.ic=jsd.ic,jsd.mica=jsd.mica,jsd.avg=jsd.avg))
     
 }
     
@@ -1145,5 +1223,36 @@ get.clip.hpo.graph <- function(GG, TARGETS=NULL){
     sub  = igraph::induced.subgraph(GG,vids=vids)
     
     return(sub);
+    
+}
+
+
+## heat-map of distance between average IC value between two gene models
+heat.map <- function(DF=NULL,SCALE=NULL,leg.tit="similarity",
+                     fill.diag=FALSE,diag.colour="firebrick2"){
+
+    gplot=NULL
+
+    if( !is.null(DF) ){
+
+        if( fill.diag ){
+            diag(DF) = NA
+        }
+        
+        if( !is.null(SCALE) ){
+            gplot = ggplot(melt(DF), aes(Var1,Var2, fill=exp(-SCALE*value))) +
+                geom_raster() +
+                scale_fill_continuous(name=leg.tit,na.value=diag.colour)
+
+        } else {
+            gplot = ggplot(melt(DF), aes(Var1,Var2, fill=value)) +
+                geom_raster() +
+                scale_fill_continuous(name=leg.tit,na.value=diag.colour)
+        }
+         
+        
+    }
+
+    return(gplot)
     
 }

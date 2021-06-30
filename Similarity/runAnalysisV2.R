@@ -125,6 +125,12 @@ PRECAL[[2]] = precal.sim( ONTO=onto, HP.SET=geneModel.HP, IC=IC, ANNO.SET=2 )[[1
 ##    1) first calculating the average IC with each gene model,
 ##    2) then calculating the js_distance (jsd) between these two models.
 
+## heat map scaling factor, i.e show how similar two gene models are, for jsd.
+ScalingFactor=vector(length=4)
+ScalingFactor[1] = 5
+ScalingFactor[2] = 50
+ScalingFactor[3] = 100
+ScalingFactor[4] = 200
 
 
 ## calculate the similarity between all DDDvDDD gene models, using precalculate MICA scores...
@@ -133,21 +139,18 @@ ddd.sim = cal.sim.matrix( MODEL.A=DDDset, MODEL.B=DDDset, PRECAL=PRECAL, IC=IC,
                           ANNO.SET.A=1, ANNO.SET.B=1,
                           TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def" )
 
+## set which jsd to plot 
+#ddd.jsd = ddd.sim$jsd.ic
+ddd.jsd = ddd.sim$jsd.mica
+
 ## heat-map of distance between average IC value between two gene models: no scaled
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=value)) + geom_raster()
+ddd.gp      = list()
+ddd.gp[[1]] = heat.map(DF=ddd.jsd,leg.tit="distance",SCALE=NULL)
 
-## heat-map of distance between average IC value between two gene models: scaled=50
-ScalingFactor=50
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
-## heat-map of distance between average IC value between two gene models: scaled=100
-ScalingFactor=100
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
-## heat-map of distance between average IC value between two gene models: scaled=200
-ScalingFactor=200
-ggplot(melt(ddd.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
-
+## heat-map of distance between average IC value between two gene models: scaled
+for( i in 1:length(ScalingFactor) ){
+    ddd.gp[[i+1]] = heat.map(DF=ddd.jsd,SCALE=ScalingFactor[i])
+}
 
 
 ## calculate the similarity between all LITvLIT gene models, using precalculate MICA scores...
@@ -156,18 +159,37 @@ lit.sim = cal.sim.matrix( MODEL.A=LITset, MODEL.B=LITset, PRECAL=PRECAL, IC=IC,
                           ANNO.SET.A=2, ANNO.SET.B=2,
                           TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def")
 
+## set which jsd to plot 
+#lit.jsd = lit.sim$jsd.ic
+lit.jsd = lit.sim$jsd.mica
+
 ## heat-map of distance between average IC value between two gene models: no scaled
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=value)) + geom_raster()
+lit.gp      = list()
+lit.gp[[1]] = heat.map(DF=lit.jsd,leg.tit="distance",SCALE=NULL)
 
-## heat-map of distance between average IC value between two gene models: scaled=50
-ScalingFactor=50
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
+## heat-map of distance between average IC value between two gene models: scaled
+for( i in 1:length(ScalingFactor) ){
+    lit.gp[[i+1]] = heat.map(DF=lit.jsd,SCALE=ScalingFactor[i])
+}
 
-## heat-map of distance between average IC value between two gene models: scaled=100
-ScalingFactor=100
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
 
-## heat-map of distance between average IC value between two gene models: scaled=200
-ScalingFactor=200
-ggplot(melt(lit.sim$jsd), aes(Var1,Var2, fill=exp(-ScalingFactor*value))) + geom_raster()
+## calculate the similarity between all DDDvLIT gene models, using precalculate MICA scores...
+## this will be fast
+Com.sim = cal.sim.matrix( MODEL.A=DDDset, MODEL.B=LITset, PRECAL=PRECAL, IC=IC,
+                          ANNO.SET.A=1, ANNO.SET.B=2,
+                         TERM.LAB="HP.term",IC.LAB="IC.def",PR.LAB="prob.def")
 
+
+## set which jsd to plot 
+#com.jsd = Com.sim$jsd.ic
+com.jsd = Com.sim$jsd.mica
+#com.jsd = Com.sim$jsd.avg
+
+## heat-map of distance between average IC value between two gene models: no scaled
+com.gp      = list()
+com.gp[[1]] = heat.map(DF=com.jsd,leg.tit="distance",SCALE=NULL,fill.diag=FALSE)
+
+## heat-map of distance between average IC value between two gene models: scaled
+for( i in 1:length(ScalingFactor) ){
+    com.gp[[i+1]] = heat.map(DF=com.jsd,SCALE=ScalingFactor[i],fill.diag=FALSE)
+}
